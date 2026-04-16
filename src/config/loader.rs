@@ -11,9 +11,12 @@ use std::path::PathBuf;
 /// 2. Project config (./ocx.json)
 /// 3. Global config (~/.config/ocx/ocx.json)
 /// 4. Defaults
+///
+/// Environment variable format:
+/// - Use single underscore for field names: OCX_NIX_VOLUME_NAME → nix_volume_name
+/// - Use double underscore for nesting: OCX_EXTRA_DATA_VOLUMES__CARGO__TARGET → extra_data_volumes.cargo.target
 pub fn load_config() -> Result<Config> {
-    let mut figment = Figment::new()
-        .merge(Serialized::defaults(Config::default()));
+    let mut figment = Figment::new().merge(Serialized::defaults(Config::default()));
 
     if let Some(global_path) = global_config_path() {
         figment = figment.merge(Json::file(global_path));
@@ -21,7 +24,7 @@ pub fn load_config() -> Result<Config> {
 
     figment
         .merge(Json::file("ocx.json"))
-        .merge(Env::prefixed("OCX_").split("_"))
+        .merge(Env::prefixed("OCX_").split("__"))
         .extract()
         .context("Failed to load configuration")
 }
