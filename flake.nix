@@ -1,11 +1,6 @@
 {
   description = "ocx - a secure Docker wrapper for OpenCode";
 
-  nixConfig = {
-    extra-substituters = [ "https://palekiwi-labs.cachix.org" ];
-    extra-trusted-public-keys = [ "palekiwi-labs.cachix.org-1:cqmRwFBlOVtJwi13WbQ2Vszyvjom4dHOGXBgwAZXHVQ=" ];
-  };
-
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
