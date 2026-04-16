@@ -3,7 +3,7 @@ use std::env;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-use crate::config::load_config;
+use crate::config::Config;
 
 /// Calculate a deterministic port based on the current working directory
 pub fn calculate_port() -> Result<u16> {
@@ -44,17 +44,15 @@ pub fn calculate_port() -> Result<u16> {
 
 /// Get the port that will be published by the container
 /// Returns the configured port if set, otherwise calculates a deterministic port
-pub fn get_port() -> Result<u16> {
-    let config = load_config()?;
-
+pub fn get_port(config: &Config) -> Result<u16> {
     match config.port {
         Some(port) => Ok(port),
         None => calculate_port(),
     }
 }
 
-pub fn handle_port() -> Result<()> {
-    let port = get_port()?;
+pub fn handle_port(config: &Config) -> Result<()> {
+    let port = get_port(config)?;
     println!("{}", port);
     Ok(())
 }
