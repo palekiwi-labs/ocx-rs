@@ -32,17 +32,11 @@ pub fn calculate_port() -> Result<u16> {
     Ok(port as u16)
 }
 
-/// Get the port that will be published by the container
-/// Returns the configured port if set, otherwise calculates a deterministic port
-pub fn get_port(config: &Config) -> Result<u16> {
-    match config.port {
-        Some(port) => Ok(port),
-        None => calculate_port(),
-    }
-}
-
 pub fn handle_port(config: &Config) -> Result<()> {
-    let port = get_port(config)?;
+    let port = match config.port {
+        Some(port) => port,
+        None => calculate_port()?,
+    };
     println!("{}", port);
     Ok(())
 }
