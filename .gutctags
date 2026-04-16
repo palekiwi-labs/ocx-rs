@@ -1,0 +1,5 @@
+--languages=Rust
+--rust-kinds=+f+g+s+S+m+c+t+v+M
+--exclude=target
+--exclude=.git
+--exclude=*.lock
