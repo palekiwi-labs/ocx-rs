@@ -1,6 +1,8 @@
+pub mod config;
 pub mod daemon;
 mod docker;
 mod docker_cli;
+mod image;
 
 pub use daemon::ensure_running;
 pub use docker::DockerClient;

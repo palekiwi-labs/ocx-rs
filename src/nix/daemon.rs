@@ -1,8 +1,9 @@
+use std::fs;
+use tempfile::TempDir;
+
 use crate::config::Config;
 use crate::nix::docker::{DockerClient, Result};
-
-/// Default Docker image for the nix daemon
-const NIX_DAEMON_IMAGE: &str = "nixos/nix:latest";
+use crate::nix::{config as nix_config, image};
 
 /// Ensure the nix daemon container is running
 pub fn ensure_running<D: DockerClient>(docker: &D, config: &Config) -> Result<()> {
@@ -14,20 +15,66 @@ pub fn ensure_running<D: DockerClient>(docker: &D, config: &Config) -> Result<()
         return Ok(());
     }
 
+    // Get the dynamic image tag based on assets hash
+    let image_tag = image::get_image_tag();
+
+    // Check if the image exists, build it if it doesn't
+    if !docker.image_exists(&image_tag)? {
+        println!("Building nix daemon image: {}", image_tag);
+        build_image(docker, &image_tag)?;
+    }
+
+    // Generate dynamic nix.conf content
+    let nix_conf_content = nix_config::generate_nix_conf(config);
+
     // Start the daemon container
     println!("Starting nix daemon container: {}", container_name);
 
     let volume_mount = format!("{}:/nix:rw", &config.nix_volume_name);
     let volumes = vec![volume_mount.as_str()];
 
+    // Pass configuration via environment variable
+    let env_vars = vec![("NIX_CONF_CONTENT", nix_conf_content.as_str())];
+
     docker.run_container(
         container_name,
-        NIX_DAEMON_IMAGE,
+        &image_tag,
         &volumes,
+        &env_vars,
         true, // detached
         true, // remove on stop
     )?;
 
     println!("Nix daemon started successfully");
+    Ok(())
+}
+
+/// Build the custom nix daemon image
+fn build_image<D: DockerClient>(docker: &D, tag: &str) -> Result<()> {
+    // Create a temporary directory for the build context
+    let temp_dir = TempDir::new().map_err(crate::nix::docker::DockerError::Io)?;
+    let context_path = temp_dir.path();
+
+    // Write the Dockerfile
+    let dockerfile_path = context_path.join("Dockerfile.nix-daemon");
+    fs::write(&dockerfile_path, image::get_dockerfile())
+        .map_err(crate::nix::docker::DockerError::Io)?;
+
+    // Write the entrypoint script
+    let entrypoint_path = context_path.join("entrypoint.sh");
+    fs::write(&entrypoint_path, image::get_entrypoint())
+        .map_err(crate::nix::docker::DockerError::Io)?;
+
+    // Since we're using a specific Dockerfile name, we actually need to pass the context path
+    // and let docker build find the Dockerfile. The docker CLI builder function
+    // needs to point to this specific Dockerfile or we should rename it to "Dockerfile".
+    // For simplicity, let's rename it to standard "Dockerfile" in the temp context.
+    let standard_dockerfile_path = context_path.join("Dockerfile");
+    fs::rename(&dockerfile_path, &standard_dockerfile_path)
+        .map_err(crate::nix::docker::DockerError::Io)?;
+
+    // Build the image
+    docker.build_image(tag, context_path)?;
+
     Ok(())
 }
