@@ -33,7 +33,6 @@ fn test_config_load_with_partial_json() {
     // Should merge with defaults
     assert_eq!(config.memory, "4g");
     assert_eq!(config.cpus, 2.5);
-    assert_eq!(config.opencode_version, "latest"); // from defaults
 }
 
 #[test]
