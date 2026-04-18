@@ -11,8 +11,7 @@ pub struct ResolvedWorkspace {
 /// Imperative shell — performs all OS interaction.
 /// Call this from the command handler.
 pub fn get_workspace(username: &str) -> Result<ResolvedWorkspace> {
-    let raw = std::env::current_dir().context("Failed to get current directory")?;
-    let root = std::fs::canonicalize(&raw).context("Failed to canonicalize current directory")?;
+    let root = std::env::current_dir().context("Failed to get current directory")?;
     let home_dir = dirs::home_dir();
     let container_path = map_container_path(&root, home_dir.as_deref(), username);
     Ok(ResolvedWorkspace {
