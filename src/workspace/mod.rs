@@ -32,15 +32,14 @@ pub fn resolve_workspace(root: &Path, home_dir: Option<&Path>) -> ResolvedWorksp
 
 /// Map a host path to its container-side equivalent.
 fn map_container_path(root: &Path, home_dir: Option<&Path>) -> PathBuf {
-    if let Some(home) = home_dir {
-        if let Ok(rel) = root.strip_prefix(home) {
+    if let Some(home) = home_dir
+        && let Ok(rel) = root.strip_prefix(home) {
             // Within home: /home/<dirname>/<rel>
             let home_dirname = home
                 .file_name()
                 .unwrap_or_else(|| std::ffi::OsStr::new("user"));
             return PathBuf::from("/home").join(home_dirname).join(rel);
         }
-    }
 
     // Outside home: /workspace/<absolute_path_without_leading_slash>
     let stripped = root.strip_prefix("/").unwrap_or(root);
