@@ -1,5 +1,7 @@
 use crate::config::Config;
+use anyhow::{Context, Result};
 use std::env;
+use std::process::Command;
 
 /// The resolved container user identity.
 #[derive(Debug, Clone, PartialEq)]
@@ -12,8 +14,8 @@ pub struct ResolvedUser {
 /// Abstracts host system user lookups so resolution logic is fully testable.
 pub trait ResolveUser {
     fn username(&self) -> Option<String>;
-    fn uid(&self) -> u32;
-    fn gid(&self) -> u32;
+    fn uid(&self) -> Result<u32>;
+    fn gid(&self) -> Result<u32>;
 }
 
 /// Production implementation — reads $USER and shells out to `id -u` / `id -g`.
@@ -24,25 +26,34 @@ impl ResolveUser for HostUser {
         env::var("USER").ok()
     }
 
-    fn uid(&self) -> u32 {
-        std::process::Command::new("id")
-            .arg("-u")
-            .output()
-            .ok()
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .and_then(|s| s.trim().parse().ok())
-            .unwrap_or(1000)
+    fn uid(&self) -> Result<u32> {
+        get_id("-u").context("Failed to retrieve host UID")
     }
 
-    fn gid(&self) -> u32 {
-        std::process::Command::new("id")
-            .arg("-g")
-            .output()
-            .ok()
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .and_then(|s| s.trim().parse().ok())
-            .unwrap_or(1000)
+    fn gid(&self) -> Result<u32> {
+        get_id("-g").context("Failed to retrieve host GID")
     }
+}
+
+fn get_id(flag: &str) -> Result<u32> {
+    let output = Command::new("id")
+        .arg(flag)
+        .output()
+        .context("Failed to execute `id` command (is it in PATH?)")?;
+
+    if !output.status.success() {
+        anyhow::bail!(
+            "`id {}` command failed with status: {}",
+            flag,
+            output.status
+        );
+    }
+
+    let s = std::str::from_utf8(&output.stdout).context("Output of `id` is not valid UTF-8")?;
+
+    s.trim()
+        .parse::<u32>()
+        .context("Failed to parse `id` output as an integer")
 }
 
 /// Resolve the container user identity from config, environment, and host fallbacks.
@@ -51,7 +62,7 @@ impl ResolveUser for HostUser {
 ///   username: config.username → OCX_USERNAME env → host username → "user"
 ///   uid:      config.uid      → OCX_UID env      → host uid
 ///   gid:      config.gid      → OCX_GID env      → host gid
-pub fn resolve_user(config: &Config, host: &impl ResolveUser) -> ResolvedUser {
+pub fn resolve_user(config: &Config, host: &impl ResolveUser) -> Result<ResolvedUser> {
     let username = config
         .username
         .clone()
@@ -59,17 +70,23 @@ pub fn resolve_user(config: &Config, host: &impl ResolveUser) -> ResolvedUser {
         .or_else(|| host.username())
         .unwrap_or_else(|| "user".to_string());
 
-    let uid = config
+    let uid = match config
         .uid
         .or_else(|| env::var("OCX_UID").ok().and_then(|v| v.parse().ok()))
-        .unwrap_or_else(|| host.uid());
+    {
+        Some(uid) => uid,
+        None => host.uid()?,
+    };
 
-    let gid = config
+    let gid = match config
         .gid
         .or_else(|| env::var("OCX_GID").ok().and_then(|v| v.parse().ok()))
-        .unwrap_or_else(|| host.gid());
+    {
+        Some(gid) => gid,
+        None => host.gid()?,
+    };
 
-    ResolvedUser { username, uid, gid }
+    Ok(ResolvedUser { username, uid, gid })
 }
 
 #[cfg(test)]
@@ -86,11 +103,11 @@ mod tests {
         fn username(&self) -> Option<String> {
             self.username.clone()
         }
-        fn uid(&self) -> u32 {
-            self.uid
+        fn uid(&self) -> Result<u32> {
+            Ok(self.uid)
         }
-        fn gid(&self) -> u32 {
-            self.gid
+        fn gid(&self) -> Result<u32> {
+            Ok(self.gid)
         }
     }
 
@@ -119,7 +136,7 @@ mod tests {
             ..Config::default()
         };
 
-        let result = resolve_user(&config, &host("alice", 1001, 1002));
+        let result = resolve_user(&config, &host("alice", 1001, 1002)).unwrap();
 
         assert_eq!(
             result,
@@ -140,11 +157,9 @@ mod tests {
             ..Config::default()
         };
 
-        // Host provides no username
-        let result = resolve_user(&config, &no_host_username(1001, 1002));
+        let result = resolve_user(&config, &no_host_username(1001, 1002)).unwrap();
 
         assert_eq!(result.username, "user");
-        // uid/gid still come from host
         assert_eq!(result.uid, 1001);
         assert_eq!(result.gid, 1002);
     }
@@ -158,8 +173,7 @@ mod tests {
             ..Config::default()
         };
 
-        // Host provides different values — should be ignored
-        let result = resolve_user(&config, &host("alice", 1001, 1002));
+        let result = resolve_user(&config, &host("alice", 1001, 1002)).unwrap();
 
         assert_eq!(
             result,
@@ -180,7 +194,7 @@ mod tests {
             ..Config::default()
         };
 
-        let result = resolve_user(&config, &host("alice", 1001, 1002));
+        let result = resolve_user(&config, &host("alice", 1001, 1002)).unwrap();
 
         assert_eq!(
             result,
