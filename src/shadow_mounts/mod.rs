@@ -5,22 +5,17 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, PartialEq)]
 pub enum ShadowMount {
     /// A directory to be masked with a read-only tmpfs overlay.
-    Directory {
-        host_path: PathBuf,
-        container_path: PathBuf,
-    },
+    Directory(PathBuf),
     /// A file to be masked by bind-mounting /dev/null over it.
-    File {
-        host_path: PathBuf,
-        container_path: PathBuf,
-    },
+    File(PathBuf),
 }
 
 /// Resolve a list of relative forbidden paths into `ShadowMount` values.
 ///
 /// Each path is joined against `workspace.root` to check existence on the host,
 /// and against `workspace.container_path` to determine the mount target inside
-/// the container. Paths that do not exist on the host are silently skipped.
+/// the container. Paths that escape the workspace root (absolute or containing
+/// `..`) or do not exist on the host are silently skipped.
 pub fn resolve_shadow_mounts(
     forbidden_paths: &[String],
     workspace: &ResolvedWorkspace,
@@ -29,18 +24,17 @@ pub fn resolve_shadow_mounts(
         .iter()
         .filter_map(|rel| {
             let host_path = workspace.root.join(rel);
+
+            if !host_path.starts_with(&workspace.root) {
+                return None;
+            }
+
             let container_path = workspace.container_path.join(rel);
 
             if host_path.is_dir() {
-                Some(ShadowMount::Directory {
-                    host_path,
-                    container_path,
-                })
+                Some(ShadowMount::Directory(container_path))
             } else if host_path.is_file() {
-                Some(ShadowMount::File {
-                    host_path,
-                    container_path,
-                })
+                Some(ShadowMount::File(container_path))
             } else {
                 None
             }
@@ -50,22 +44,21 @@ pub fn resolve_shadow_mounts(
 
 /// Build Docker CLI arguments for a slice of resolved shadow mounts.
 ///
-/// - `Directory` -> `--mount type=tmpfs,...` with mode 000, size 1k, read-only,
-///   no-exec, no-suid.
+/// - `Directory` -> `--tmpfs <container_path>:ro,noexec,nosuid,size=1k,mode=000`
 /// - `File` -> `-v /dev/null:<container_path>:ro`
 pub fn build_shadow_mount_args(mounts: &[ShadowMount]) -> Vec<String> {
     let mut args = Vec::new();
 
     for mount in mounts {
         match mount {
-            ShadowMount::Directory { container_path, .. } => {
-                args.push("--mount".to_string());
+            ShadowMount::Directory(container_path) => {
+                args.push("--tmpfs".to_string());
                 args.push(format!(
-                    "type=tmpfs,destination={},tmpfs-mode=000,tmpfs-size=1k,readonly,exec=false,suid=false",
+                    "{}:ro,noexec,nosuid,size=1k,mode=000",
                     container_path.display()
                 ));
             }
-            ShadowMount::File { container_path, .. } => {
+            ShadowMount::File(container_path) => {
                 args.push("-v".to_string());
                 args.push(format!("/dev/null:{}:ro", container_path.display()));
             }
@@ -115,10 +108,9 @@ mod tests {
 
         assert_eq!(
             result,
-            vec![ShadowMount::Directory {
-                host_path: tmp.path().join("secrets"),
-                container_path: PathBuf::from("/home/user/project/secrets"),
-            }]
+            vec![ShadowMount::Directory(PathBuf::from(
+                "/home/user/project/secrets"
+            ))]
         );
     }
 
@@ -132,10 +124,7 @@ mod tests {
 
         assert_eq!(
             result,
-            vec![ShadowMount::File {
-                host_path: tmp.path().join(".env"),
-                container_path: PathBuf::from("/home/user/project/.env"),
-            }]
+            vec![ShadowMount::File(PathBuf::from("/home/user/project/.env"))]
         );
     }
 
@@ -158,16 +147,28 @@ mod tests {
         assert_eq!(
             result,
             vec![
-                ShadowMount::Directory {
-                    host_path: tmp.path().join("secrets"),
-                    container_path: PathBuf::from("/home/user/project/secrets"),
-                },
-                ShadowMount::File {
-                    host_path: tmp.path().join(".env"),
-                    container_path: PathBuf::from("/home/user/project/.env"),
-                },
+                ShadowMount::Directory(PathBuf::from("/home/user/project/secrets")),
+                ShadowMount::File(PathBuf::from("/home/user/project/.env")),
             ]
         );
+    }
+
+    // --- path safety ---
+
+    #[test]
+    fn test_resolve_absolute_path_is_skipped() {
+        let tmp = TempDir::new().unwrap();
+        let ws = workspace(&tmp);
+        let result = resolve_shadow_mounts(&["/etc/passwd".to_string()], &ws);
+        assert_eq!(result, vec![]);
+    }
+
+    #[test]
+    fn test_resolve_parent_traversal_is_skipped() {
+        let tmp = TempDir::new().unwrap();
+        let ws = workspace(&tmp);
+        let result = resolve_shadow_mounts(&["../outside".to_string()], &ws);
+        assert_eq!(result, vec![]);
     }
 
     // --- build_shadow_mount_args ---
@@ -179,26 +180,22 @@ mod tests {
 
     #[test]
     fn test_args_directory() {
-        let mounts = vec![ShadowMount::Directory {
-            host_path: PathBuf::from("/host/secrets"),
-            container_path: PathBuf::from("/home/user/project/secrets"),
-        }];
+        let mounts = vec![ShadowMount::Directory(PathBuf::from(
+            "/home/user/project/secrets",
+        ))];
 
         assert_eq!(
             build_shadow_mount_args(&mounts),
             vec![
-                "--mount",
-                "type=tmpfs,destination=/home/user/project/secrets,tmpfs-mode=000,tmpfs-size=1k,readonly,exec=false,suid=false",
+                "--tmpfs",
+                "/home/user/project/secrets:ro,noexec,nosuid,size=1k,mode=000",
             ]
         );
     }
 
     #[test]
     fn test_args_file() {
-        let mounts = vec![ShadowMount::File {
-            host_path: PathBuf::from("/host/.env"),
-            container_path: PathBuf::from("/home/user/project/.env"),
-        }];
+        let mounts = vec![ShadowMount::File(PathBuf::from("/home/user/project/.env"))];
 
         assert_eq!(
             build_shadow_mount_args(&mounts),
@@ -209,21 +206,15 @@ mod tests {
     #[test]
     fn test_args_mixed_order_preserved() {
         let mounts = vec![
-            ShadowMount::Directory {
-                host_path: PathBuf::from("/host/secrets"),
-                container_path: PathBuf::from("/home/user/project/secrets"),
-            },
-            ShadowMount::File {
-                host_path: PathBuf::from("/host/.env"),
-                container_path: PathBuf::from("/home/user/project/.env"),
-            },
+            ShadowMount::Directory(PathBuf::from("/home/user/project/secrets")),
+            ShadowMount::File(PathBuf::from("/home/user/project/.env")),
         ];
 
         assert_eq!(
             build_shadow_mount_args(&mounts),
             vec![
-                "--mount",
-                "type=tmpfs,destination=/home/user/project/secrets,tmpfs-mode=000,tmpfs-size=1k,readonly,exec=false,suid=false",
+                "--tmpfs",
+                "/home/user/project/secrets:ro,noexec,nosuid,size=1k,mode=000",
                 "-v",
                 "/dev/null:/home/user/project/.env:ro",
             ]
