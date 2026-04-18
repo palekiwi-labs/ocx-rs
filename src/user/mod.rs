@@ -23,19 +23,19 @@ pub struct HostUser;
 
 impl ResolveUser for HostUser {
     fn username(&self) -> Option<String> {
-        env::var("USER").ok().or_else(|| get_username().ok())
+        env::var("USER").or_else(|_| run_id("-un")).ok()
     }
 
     fn uid(&self) -> Result<u32> {
-        get_id("-u").context("Failed to retrieve host UID")
+        Ok(run_id("-u")?.parse::<u32>()?)
     }
 
     fn gid(&self) -> Result<u32> {
-        get_id("-g").context("Failed to retrieve host GID")
+        Ok(run_id("-g")?.parse::<u32>()?)
     }
 }
 
-fn get_id(flag: &str) -> Result<u32> {
+fn run_id(flag: &str) -> Result<String> {
     let output = Command::new("id")
         .arg(flag)
         .output()
@@ -52,28 +52,6 @@ fn get_id(flag: &str) -> Result<u32> {
     }
 
     let s = std::str::from_utf8(&output.stdout).context("Output of `id` is not valid UTF-8")?;
-
-    s.trim()
-        .parse::<u32>()
-        .context("Failed to parse `id` output as an integer")
-}
-
-fn get_username() -> Result<String> {
-    let output = Command::new("id")
-        .arg("-un")
-        .output()
-        .context("Failed to execute `id -un` command (is it in PATH?)")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!(
-            "`id -un` command failed with status: {}\n{}",
-            output.status,
-            stderr.trim()
-        );
-    }
-
-    let s = std::str::from_utf8(&output.stdout).context("Output of `id -un` is not valid UTF-8")?;
 
     Ok(s.trim().to_string())
 }
@@ -209,8 +187,6 @@ mod tests {
 
     #[test]
     fn test_host_user_resolves_on_real_system() {
-        // Sanity check that HostUser can actually shell out and parse results
-        // on the developer's machine. Fails fast if `id` is missing or broken.
         let host = HostUser;
         assert!(host.uid().is_ok());
         assert!(host.gid().is_ok());
