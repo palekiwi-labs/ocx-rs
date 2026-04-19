@@ -11,11 +11,12 @@ pub fn resolve_extra_dirs(config: &Config, username: &str) -> String {
         .values()
         .filter(|v| v.volume_type == "volume")
         .map(|v| {
-            if let Some(rest) = v.target.strip_prefix("~/") {
+            let expanded = if let Some(rest) = v.target.strip_prefix("~/") {
                 format!("/home/{}/{}", username, rest)
             } else {
                 v.target.clone()
-            }
+            };
+            format!("\"{}\"", expanded)
         })
         .collect();
 
@@ -60,7 +61,10 @@ mod tests {
             .extra_data_volumes
             .insert("cargo".to_string(), volume("/home/alice/.cargo", "volume"));
 
-        assert_eq!(resolve_extra_dirs(&config, "alice"), "/home/alice/.cargo");
+        assert_eq!(
+            resolve_extra_dirs(&config, "alice"),
+            "\"/home/alice/.cargo\""
+        );
     }
 
     #[test]
@@ -70,7 +74,10 @@ mod tests {
             .extra_data_volumes
             .insert("cargo".to_string(), volume("~/.cargo", "volume"));
 
-        assert_eq!(resolve_extra_dirs(&config, "alice"), "/home/alice/.cargo");
+        assert_eq!(
+            resolve_extra_dirs(&config, "alice"),
+            "\"/home/alice/.cargo\""
+        );
     }
 
     #[test]
@@ -84,6 +91,6 @@ mod tests {
             .insert("local".to_string(), volume("~/.local", "volume"));
 
         let result = resolve_extra_dirs(&config, "alice");
-        assert_eq!(result, "/home/alice/.cargo /home/alice/.local");
+        assert_eq!(result, "\"/home/alice/.cargo\" \"/home/alice/.local\"");
     }
 }
