@@ -1,7 +1,7 @@
 pub mod config;
 pub mod daemon;
 mod dev;
-mod dev_image;
+pub mod dev_image;
 mod docker;
 mod docker_cli;
 mod extra_dirs;
