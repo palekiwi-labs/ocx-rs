@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use std::path::PathBuf;
+use std::path::Path;
 
 use crate::version::cache;
 use crate::version::github::VersionFetcher;
@@ -13,7 +13,7 @@ use crate::version::github::VersionFetcher;
 pub fn resolve_version<F: VersionFetcher>(
     version: &str,
     ttl_hours: u32,
-    cache_path: &PathBuf,
+    cache_path: &Path,
     fetcher: &F,
 ) -> Result<String> {
     let normalized = normalize_version(version);
@@ -45,6 +45,10 @@ pub fn resolve_version<F: VersionFetcher>(
             if let Ok(raw) = std::fs::read_to_string(cache_path)
                 && let Ok(entry) = serde_json::from_str::<cache::CacheEntry>(&raw)
             {
+                eprintln!(
+                    "Warning: Failed to reach GitHub ({}). Falling back to cached version '{}'.",
+                    fetch_err, entry.version
+                );
                 return Ok(entry.version);
             }
             bail!(
@@ -85,6 +89,7 @@ mod tests {
     use super::*;
     use crate::version::cache::{write_cache, CacheEntry};
     use std::fs;
+    use std::path::PathBuf;
     use tempfile::TempDir;
 
     // --- test doubles ---
