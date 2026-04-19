@@ -3,6 +3,7 @@ pub mod daemon;
 mod dev_image;
 mod docker;
 mod docker_cli;
+mod extra_dirs;
 mod image;
 mod image_hash;
 
