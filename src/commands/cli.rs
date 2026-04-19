@@ -1,8 +1,7 @@
-use anyhow::Result;
-use clap::{Parser, Subcommand};
-
 use super::{build, config, nix, opencode, port};
 use crate::config::load_config;
+use anyhow::Result;
+use clap::{Parser, Subcommand};
 
 /// ocx - a secure Docker wrapper for OpenCode
 #[derive(Parser)]
@@ -29,7 +28,11 @@ pub enum Commands {
     #[command(alias = "o")]
     Opencode {
         /// Extra arguments to pass to the opencode command
-        #[arg(last = true)]
+        #[arg(
+            trailing_var_arg = true,
+            allow_hyphen_values = true,
+            num_args = 0..
+        )]
         extra_args: Vec<String>,
     },
     /// Print the port that the container will publish
