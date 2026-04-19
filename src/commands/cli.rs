@@ -27,6 +27,15 @@ pub enum Commands {
     },
     /// Print the port that the container will publish
     Port,
+    /// Build both the Nix daemon and Nix dev images
+    Build {
+        #[arg(long)]
+        base: bool,
+        #[arg(short, long)]
+        force: bool,
+        #[arg(long)]
+        no_cache: bool,
+    },
 }
 
 pub fn run(cli: Cli) -> Result<()> {
@@ -37,6 +46,11 @@ pub fn run(cli: Cli) -> Result<()> {
         Some(Commands::Config { command }) => config::handle_config(&cfg, command),
         Some(Commands::Nix { command }) => nix::handle_nix(&cfg, command),
         Some(Commands::Port) => port::handle_port(&cfg),
+        Some(Commands::Build {
+            base: _,
+            force: _,
+            no_cache: _,
+        }) => Ok(()), // TODO: implement
         None => {
             // No subcommand provided, print help
             Cli::parse_from(["ocx", "--help"]);
