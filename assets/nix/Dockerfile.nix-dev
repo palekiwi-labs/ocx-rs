@@ -30,7 +30,7 @@ RUN mkdir -p /etc/nix && \
 ENV PATH="/nix/var/nix/profiles/default/bin:${PATH}"
 
 # Copy entrypoint script
-COPY entrypoint-dev.sh /usr/local/bin/entrypoint.sh
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Limit GC marker threads for Nix commands running in the container
