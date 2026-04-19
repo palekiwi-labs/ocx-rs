@@ -1,6 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -13,7 +13,7 @@ pub struct CacheEntry {
 /// Read a valid (non-expired) cache entry from the given path.
 /// Returns `None` if the file does not exist, cannot be parsed, or is older
 /// than `ttl_hours`.
-pub fn read_cache(path: &PathBuf, ttl_hours: u32) -> Option<CacheEntry> {
+pub fn read_cache(path: &Path, ttl_hours: u32) -> Option<CacheEntry> {
     let raw = std::fs::read_to_string(path).ok()?;
     let entry: CacheEntry = serde_json::from_str(&raw).ok()?;
     let age_nanos = now_nanos().saturating_sub(entry.fetched_at);
@@ -25,7 +25,7 @@ pub fn read_cache(path: &PathBuf, ttl_hours: u32) -> Option<CacheEntry> {
 }
 
 /// Write a cache entry to the given path, creating parent directories as needed.
-pub fn write_cache(path: &PathBuf, version: &str) -> Result<()> {
+pub fn write_cache(path: &Path, version: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
