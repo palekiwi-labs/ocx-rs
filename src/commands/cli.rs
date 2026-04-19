@@ -1,8 +1,12 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
-use super::{config, nix, port};
+use super::{build, config, nix, port};
 use crate::config::load_config;
+use crate::nix::DockerCliClient;
+use crate::user::get_user;
+use crate::version::github::GithubVersionFetcher;
 
 /// ocx - a secure Docker wrapper for OpenCode
 #[derive(Parser)]
@@ -47,10 +51,23 @@ pub fn run(cli: Cli) -> Result<()> {
         Some(Commands::Nix { command }) => nix::handle_nix(&cfg, command),
         Some(Commands::Port) => port::handle_port(&cfg),
         Some(Commands::Build {
-            base: _,
-            force: _,
-            no_cache: _,
-        }) => Ok(()), // TODO: implement
+            base,
+            force,
+            no_cache,
+        }) => {
+            let docker = DockerCliClient;
+            let user = get_user()?;
+            let fetcher = GithubVersionFetcher;
+
+            let cache_dir = dirs::cache_dir()
+                .unwrap_or_else(|| PathBuf::from(".cache"))
+                .join("ocx")
+                .join("version-cache.json");
+
+            build::handle_build(
+                &docker, &cfg, &user, &fetcher, &cache_dir, base, force, no_cache,
+            )
+        }
         None => {
             // No subcommand provided, print help
             Cli::parse_from(["ocx", "--help"]);
