@@ -20,6 +20,9 @@ pub fn build_dev<D: DockerClient>(
 
     if !opts.force && docker.image_exists(&image_tag)? {
         println!("Nix dev image already exists: {}", image_tag);
+        if opts.no_cache {
+            println!("Hint: You passed --no-cache. If you want to force a rebuild of the existing image, use --force.");
+        }
         return Ok(());
     }
 
