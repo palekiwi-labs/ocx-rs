@@ -1,6 +1,6 @@
+use super::workspace::ResolvedWorkspace;
 use crate::config::Config;
 use crate::user::ResolvedUser;
-use crate::workspace::ResolvedWorkspace;
 use std::path::Path;
 
 pub fn build_data_volume_args(cfg: &Config, user: &ResolvedUser) -> Vec<String> {
@@ -68,7 +68,7 @@ fn build_mount_spec(
             .source
             .as_deref()
             .map(|s| {
-                crate::opencode::utils::expand_tilde(s, host_home_dir)
+                super::utils::expand_tilde(s, host_home_dir)
                     .to_string_lossy()
                     .into_owned()
             })
