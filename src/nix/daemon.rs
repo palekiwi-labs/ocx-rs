@@ -2,15 +2,18 @@ use std::fs;
 use tempfile::TempDir;
 
 use crate::config::Config;
-use crate::nix::docker::{DockerClient, Result};
+use crate::docker::args;
+use crate::docker::client::DockerClient;
 use crate::nix::{config as nix_config, image};
+use anyhow::Result;
 
 /// Ensure the nix daemon container is running
-pub fn ensure_running<D: DockerClient>(docker: &D, config: &Config) -> Result<()> {
+pub fn ensure_running(docker: &DockerClient, config: &Config) -> Result<()> {
     let container_name = &config.nix_daemon_container_name;
 
     // Check if already running
-    if docker.is_container_running(container_name)? {
+    let ps_args = args::build_ps_args(container_name);
+    if !docker.query_command(ps_args)?.trim().is_empty() {
         println!("Nix daemon is already running: {}", container_name);
         return Ok(());
     }
@@ -19,7 +22,8 @@ pub fn ensure_running<D: DockerClient>(docker: &D, config: &Config) -> Result<()
     let image_tag = image::get_image_tag();
 
     // Check if the image exists, build it if it doesn't
-    if !docker.image_exists(&image_tag)? {
+    let image_args = args::build_image_exists_args(&image_tag);
+    if docker.query_command(image_args)?.trim().is_empty() {
         println!("Building nix daemon image: {}", image_tag);
         build_image(docker, &image_tag)?;
     }
@@ -30,27 +34,25 @@ pub fn ensure_running<D: DockerClient>(docker: &D, config: &Config) -> Result<()
     // Start the daemon container
     println!("Starting nix daemon container: {}", container_name);
 
-    let volume_mount = format!("{}:/nix:rw", &config.nix_volume_name);
-    let volumes = vec![volume_mount.as_str()];
+    // Assemble options
+    let mut opts = vec![
+        "-d".to_string(),
+        "--rm".to_string(),
+        "-e".to_string(),
+        format!("NIX_CONF_CONTENT={}", nix_conf_content),
+        "-v".to_string(),
+        format!("{}:/nix:rw", config.nix_volume_name),
+    ];
 
-    // Pass configuration via environment variable
-    let env_vars = vec![("NIX_CONF_CONTENT", nix_conf_content.as_str())];
-
-    docker.run_container(
-        container_name,
-        &image_tag,
-        &volumes,
-        &env_vars,
-        true, // detached
-        true, // remove on stop
-    )?;
+    let run_args = args::build_run_args(container_name, &image_tag, opts, None);
+    docker.run_command(run_args)?;
 
     println!("Nix daemon started successfully");
     Ok(())
 }
 
 /// Build the custom nix daemon image
-fn build_image<D: DockerClient>(docker: &D, tag: &str) -> Result<()> {
+fn build_image(docker: &DockerClient, tag: &str) -> Result<()> {
     // Create a temporary directory for the build context
     let temp_dir = TempDir::new()?;
     let context_path = temp_dir.path();
@@ -64,30 +66,33 @@ fn build_image<D: DockerClient>(docker: &D, tag: &str) -> Result<()> {
     fs::write(&entrypoint_path, image::get_entrypoint())?;
 
     // Build the image
-    docker.build_image(tag, context_path, &[], false)?;
+    let build_args = args::build_docker_build_args(tag, context_path, &[], false);
+    docker.stream_command(build_args)?;
 
     Ok(())
 }
 
 /// Explicitly build the custom nix daemon image
-pub fn build<D: DockerClient>(docker: &D) -> Result<()> {
+pub fn build(docker: &DockerClient) -> Result<()> {
     let image_tag = image::get_image_tag();
     println!("Building nix daemon image: {}", image_tag);
     build_image(docker, &image_tag)
 }
 
 /// Stop the nix daemon container
-pub fn stop<D: DockerClient>(docker: &D, config: &Config) -> Result<()> {
+pub fn stop(docker: &DockerClient, config: &Config) -> Result<()> {
     let container_name = &config.nix_daemon_container_name;
 
     // Check if it's actually running
-    if !docker.is_container_running(container_name)? {
+    let ps_args = args::build_ps_args(container_name);
+    if docker.query_command(ps_args)?.trim().is_empty() {
         println!("Nix daemon is not running: {}", container_name);
         return Ok(());
     }
 
     println!("Stopping nix daemon container: {}", container_name);
-    docker.stop_container(container_name)?;
+    let stop_args = args::build_stop_args(container_name);
+    docker.run_command(stop_args)?;
     println!("Nix daemon stopped successfully");
 
     Ok(())
