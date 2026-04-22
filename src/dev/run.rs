@@ -5,13 +5,14 @@ use crate::config::Config;
 use crate::dev;
 use crate::dev::container_name::resolve_container_name;
 use crate::dev::env_passthrough::build_passthrough_env_args;
+use crate::dev::shadow_mounts::{build_shadow_mount_args, resolve_shadow_mounts};
 use crate::dev::volumes::{build_data_volume_args, build_extra_volume_args};
-use crate::dev::workspace::{get_workspace, ResolvedWorkspace};
+use crate::dev::workspace::{ResolvedWorkspace, get_workspace};
 use crate::docker::args::build_run_args;
 use crate::docker::client::DockerClient;
 use crate::nix;
 use crate::opencode;
-use crate::user::{get_user, ResolvedUser};
+use crate::user::{ResolvedUser, get_user};
 
 /// Options for building the Docker run command.
 pub struct RunOpts {
@@ -111,16 +112,10 @@ pub fn build_run_opts(config: &Config, opts: &RunOpts) -> Vec<String> {
     // LLM API keys and OpenCode-specific env vars present on the host.
     run_args.extend(build_passthrough_env_args());
 
-    // Workspace bind mount.
+    // Nix store.
     run_args.extend([
         "-v".to_string(),
-        format!(
-            "{}:{}:rw",
-            opts.workspace.root.display(),
-            opts.workspace.container_path.display()
-        ),
-        "--workdir".to_string(),
-        opts.workspace.container_path.to_string_lossy().into_owned(),
+        format!("{}:/nix:ro", config.nix_volume_name),
     ]);
 
     // OpenCode config directory bind mount.
@@ -133,6 +128,22 @@ pub fn build_run_opts(config: &Config, opts: &RunOpts) -> Vec<String> {
         ),
     ]);
 
+    // Timezone.
+    run_args.extend([
+        "-v".to_string(),
+        "/etc/localtime:/etc/localtime:ro".to_string(),
+    ]);
+
+    // Workspace bind mount.
+    run_args.extend([
+        "-v".to_string(),
+        format!(
+            "{}:{}:rw",
+            opts.workspace.root.display(),
+            opts.workspace.container_path.display()
+        ),
+    ]);
+
     // Data volumes.
     run_args.extend(build_data_volume_args(config, &opts.user));
     run_args.extend(build_extra_volume_args(
@@ -141,6 +152,14 @@ pub fn build_run_opts(config: &Config, opts: &RunOpts) -> Vec<String> {
         &opts.workspace,
         opts.host_home_dir.as_deref(),
     ));
+
+    // Shadow mounts.
+    let shadow_mounts = resolve_shadow_mounts(&config.forbidden_paths, &opts.workspace);
+    run_args.extend(build_shadow_mount_args(&shadow_mounts));
+
+    // Working directory.
+    run_args.push("--workdir".to_string());
+    run_args.push(opts.workspace.container_path.to_string_lossy().into_owned());
 
     run_args
 }
@@ -181,15 +200,62 @@ mod tests {
         assert!(run_args.contains(&"no-new-privileges".to_string()));
         assert!(run_args.contains(&"USER=alice".to_string()));
         assert!(run_args.contains(&"/home/alice/project:/home/alice/project:rw".to_string()));
-        assert!(run_args
-            .contains(&"/home/alice/.config/opencode:/home/alice/.config/opencode:rw".to_string()));
+        assert!(
+            run_args.contains(
+                &"/home/alice/.config/opencode:/home/alice/.config/opencode:rw".to_string()
+            )
+        );
 
         // Port check
         if config.publish_port {
             assert!(run_args.contains(&"32768:80".to_string()));
         }
 
+        // Phase 2 volume checks
+        assert!(run_args.contains(&format!("{}:/nix:ro", config.nix_volume_name)));
+        assert!(run_args.contains(&"/etc/localtime:/etc/localtime:ro".to_string()));
+        assert!(run_args.contains(&"--workdir".to_string()));
+
         // Data volumes should be present by default
         assert!(run_args.contains(&"ocx-cache:/home/alice/.cache:rw".to_string()));
+    }
+
+    #[test]
+    fn test_build_run_opts_shadow_mounts() {
+        let config = Config {
+            forbidden_paths: vec!["secrets".to_string()],
+            ..Config::default()
+        };
+
+        let user = ResolvedUser {
+            username: "alice".to_string(),
+            uid: 1000,
+            gid: 1000,
+        };
+
+        let temp = tempfile::TempDir::new().unwrap();
+        let root = temp.path().to_path_buf();
+        std::fs::create_dir(root.join("secrets")).unwrap();
+
+        let workspace = ResolvedWorkspace {
+            root,
+            container_path: PathBuf::from("/home/alice/project"),
+        };
+        let opencode_config_dir = PathBuf::from("/home/alice/.config/opencode");
+        let port = 32768;
+
+        let opts = RunOpts {
+            workspace,
+            user,
+            port,
+            opencode_config_dir,
+            host_home_dir: Some(PathBuf::from("/home/alice")),
+        };
+
+        let run_args = build_run_opts(&config, &opts);
+
+        assert!(run_args.contains(
+            &"/home/alice/project/secrets:ro,noexec,nosuid,size=1k,mode=000".to_string()
+        ));
     }
 }
