@@ -63,8 +63,10 @@ mod tests {
 
     #[test]
     fn test_resolve_port_with_config_override() {
-        let mut config = Config::default();
-        config.port = Some(12345);
+        let config = Config {
+            port: Some(12345),
+            ..Default::default()
+        };
         assert_eq!(resolve_port(&config).unwrap(), 12345);
     }
 
