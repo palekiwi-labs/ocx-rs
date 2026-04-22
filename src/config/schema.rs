@@ -41,8 +41,6 @@ pub struct Config {
     pub env_file: Option<String>,
 
     // Data Volumes
-    pub data_volumes_mode: String,
-
     pub data_volumes_name: String,
 
     pub extra_data_volumes: HashMap<String, VolumeConfig>,
@@ -107,7 +105,6 @@ impl Default for Config {
             rgignore_file: None,
             custom_base_dockerfile: None,
             env_file: None,
-            data_volumes_mode: "git".to_string(),
             data_volumes_name: "ocx".to_string(),
             extra_data_volumes: HashMap::new(),
             nix_volume_name: format!("{}ocx-nix", dev_prefix),
