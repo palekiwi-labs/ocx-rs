@@ -27,6 +27,7 @@ pub fn run_opencode(config: &Config, extra_args: Vec<String>) -> Result<()> {
 
     // Resolve port and container name.
     let port = dev::port::resolve_port(config)?;
+    let opencode_config_dir = opencode::ensure_config_dir()?;
     let cwd_basename = workspace
         .root
         .file_name()
@@ -35,7 +36,7 @@ pub fn run_opencode(config: &Config, extra_args: Vec<String>) -> Result<()> {
     let container_name = resolve_container_name(config, cwd_basename, port);
 
     // Build docker run flags.
-    let opts = build_run_opts(config, &user, &workspace, port);
+    let opts = build_run_opts(config, &user, &workspace, &opencode_config_dir, port);
 
     // Build the full command.
     let mut cmd = config.opencode_command.clone();
@@ -46,11 +47,14 @@ pub fn run_opencode(config: &Config, extra_args: Vec<String>) -> Result<()> {
     Err(docker.exec_command(docker_args))
 }
 
+use std::path::Path;
+
 /// Build the full set of Docker run flags for an OpenCode session.
 pub fn build_run_opts(
     config: &Config,
     user: &ResolvedUser,
     workspace: &ResolvedWorkspace,
+    opencode_config_dir: &Path,
     port: u16,
 ) -> Vec<String> {
     let mut opts: Vec<String> = vec![
@@ -106,6 +110,16 @@ pub fn build_run_opts(
         workspace.container_path.to_string_lossy().into_owned(),
     ]);
 
+    // OpenCode config directory bind mount.
+    opts.extend([
+        "-v".to_string(),
+        format!(
+            "{}:/home/{}/.config/opencode:rw",
+            opencode_config_dir.display(),
+            user.username
+        ),
+    ]);
+
     opts
 }
 
@@ -126,9 +140,10 @@ mod tests {
             root: PathBuf::from("/home/alice/project"),
             container_path: PathBuf::from("/home/alice/project"),
         };
+        let opencode_config_dir = PathBuf::from("/home/alice/.config/opencode");
         let port = 32768;
 
-        let opts = build_run_opts(&config, &user, &workspace, port);
+        let opts = build_run_opts(&config, &user, &workspace, &opencode_config_dir, port);
 
         // Check for key flags
         assert!(opts.contains(&"--rm".to_string()));
@@ -136,6 +151,8 @@ mod tests {
         assert!(opts.contains(&"no-new-privileges".to_string()));
         assert!(opts.contains(&"USER=alice".to_string()));
         assert!(opts.contains(&"/home/alice/project:/home/alice/project:rw".to_string()));
+        assert!(opts
+            .contains(&"/home/alice/.config/opencode:/home/alice/.config/opencode:rw".to_string()));
 
         // Port check
         if config.publish_port {

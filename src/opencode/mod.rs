@@ -1,4 +1,7 @@
+pub mod config_dir;
 pub mod version;
+
+pub use config_dir::ensure_config_dir;
 
 use crate::config::Config;
 use crate::opencode::version::github::GithubVersionFetcher;
