@@ -21,6 +21,7 @@ pub struct RunOpts {
     pub port: u16,
     pub opencode_config_dir: PathBuf,
     pub host_home_dir: Option<PathBuf>,
+    pub user_flake_host_dir: Option<PathBuf>,
 }
 
 /// Orchestrate and run an OpenCode session.
@@ -48,6 +49,10 @@ pub fn run_opencode(config: &Config, extra_args: Vec<String>) -> Result<()> {
     let container_name = resolve_container_name(config, cwd_basename, port);
 
     let host_home_dir = dirs::home_dir();
+    let user_flake_host_dir = host_home_dir
+        .as_ref()
+        .filter(|h| h.join(".config/ocx/nix/flake.nix").exists())
+        .map(|h| h.join(".config/ocx/nix"));
 
     let run_opts = RunOpts {
         workspace,
@@ -55,6 +60,7 @@ pub fn run_opencode(config: &Config, extra_args: Vec<String>) -> Result<()> {
         port,
         opencode_config_dir,
         host_home_dir,
+        user_flake_host_dir,
     };
 
     // Build docker run flags.
@@ -117,6 +123,18 @@ pub fn build_run_opts(config: &Config, opts: &RunOpts) -> Vec<String> {
         "-v".to_string(),
         format!("{}:/nix:ro", config.nix_volume_name),
     ]);
+
+    // User flake mount.
+    if let Some(flake_dir) = &opts.user_flake_host_dir {
+        run_args.extend([
+            "-v".to_string(),
+            format!(
+                "{}:/home/{}/.config/ocx/nix:rw",
+                flake_dir.display(),
+                opts.user.username
+            ),
+        ]);
+    }
 
     // OpenCode config directory bind mount.
     run_args.extend([
@@ -190,6 +208,7 @@ mod tests {
             port,
             opencode_config_dir,
             host_home_dir: Some(PathBuf::from("/home/alice")),
+            user_flake_host_dir: None,
         };
 
         let run_args = build_run_opts(&config, &opts);
@@ -250,6 +269,7 @@ mod tests {
             port,
             opencode_config_dir,
             host_home_dir: Some(PathBuf::from("/home/alice")),
+            user_flake_host_dir: None,
         };
 
         let run_args = build_run_opts(&config, &opts);
@@ -257,5 +277,69 @@ mod tests {
         assert!(run_args.contains(
             &"/home/alice/project/secrets:ro,noexec,nosuid,size=1k,mode=000".to_string()
         ));
+    }
+
+    #[test]
+    fn test_build_run_opts_user_flake_present() {
+        let config = Config::default();
+        let user = ResolvedUser {
+            username: "alice".to_string(),
+            uid: 1000,
+            gid: 1000,
+        };
+        let workspace = ResolvedWorkspace {
+            root: PathBuf::from("/home/alice/project"),
+            container_path: PathBuf::from("/home/alice/project"),
+        };
+        let opencode_config_dir = PathBuf::from("/home/alice/.config/opencode");
+        let flake_dir = PathBuf::from("/home/alice/.config/ocx/nix");
+
+        let opts = RunOpts {
+            workspace,
+            user,
+            port: 32768,
+            opencode_config_dir,
+            host_home_dir: Some(PathBuf::from("/home/alice")),
+            user_flake_host_dir: Some(flake_dir),
+        };
+
+        let run_args = build_run_opts(&config, &opts);
+
+        assert!(
+            run_args.contains(
+                &"/home/alice/.config/ocx/nix:/home/alice/.config/ocx/nix:rw".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn test_build_run_opts_user_flake_absent() {
+        let config = Config::default();
+        let user = ResolvedUser {
+            username: "alice".to_string(),
+            uid: 1000,
+            gid: 1000,
+        };
+        let workspace = ResolvedWorkspace {
+            root: PathBuf::from("/home/alice/project"),
+            container_path: PathBuf::from("/home/alice/project"),
+        };
+        let opencode_config_dir = PathBuf::from("/home/alice/.config/opencode");
+
+        let opts = RunOpts {
+            workspace,
+            user,
+            port: 32768,
+            opencode_config_dir,
+            host_home_dir: Some(PathBuf::from("/home/alice")),
+            user_flake_host_dir: None,
+        };
+
+        let run_args = build_run_opts(&config, &opts);
+
+        // Ensure no /ocx/nix mount is present
+        for arg in &run_args {
+            assert!(!arg.contains("/.config/ocx/nix"));
+        }
     }
 }
