@@ -11,3 +11,4 @@ pub mod volumes;
 pub mod workspace;
 
 pub use build::{build_dev, ensure_dev_image};
+pub use run::run_opencode;
