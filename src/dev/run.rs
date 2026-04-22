@@ -32,7 +32,7 @@ pub fn run_opencode(config: &Config, extra_args: Vec<String>) -> Result<()> {
         .root
         .file_name()
         .and_then(|n| n.to_str())
-        .unwrap_or("ocx");
+        .expect("Workspace root should have a valid directory name");
     let container_name = resolve_container_name(config, cwd_basename, port);
 
     // Build docker run flags.
