@@ -1,15 +1,26 @@
 use anyhow::Result;
+use std::path::PathBuf;
 
 use crate::config::Config;
 use crate::dev;
 use crate::dev::container_name::resolve_container_name;
 use crate::dev::env_passthrough::build_passthrough_env_args;
+use crate::dev::volumes::{build_data_volume_args, build_extra_volume_args};
 use crate::dev::workspace::{get_workspace, ResolvedWorkspace};
 use crate::docker::args::build_run_args;
 use crate::docker::client::DockerClient;
 use crate::nix;
 use crate::opencode;
 use crate::user::{get_user, ResolvedUser};
+
+/// Options for building the Docker run command.
+pub struct RunOpts {
+    pub workspace: ResolvedWorkspace,
+    pub user: ResolvedUser,
+    pub port: u16,
+    pub opencode_config_dir: PathBuf,
+    pub host_home_dir: Option<PathBuf>,
+}
 
 /// Orchestrate and run an OpenCode session.
 pub fn run_opencode(config: &Config, extra_args: Vec<String>) -> Result<()> {
@@ -35,8 +46,18 @@ pub fn run_opencode(config: &Config, extra_args: Vec<String>) -> Result<()> {
         .expect("Workspace root should have a valid directory name");
     let container_name = resolve_container_name(config, cwd_basename, port);
 
+    let host_home_dir = dirs::home_dir();
+
+    let run_opts = RunOpts {
+        workspace,
+        user,
+        port,
+        opencode_config_dir,
+        host_home_dir,
+    };
+
     // Build docker run flags.
-    let opts = build_run_opts(config, &user, &workspace, &opencode_config_dir, port);
+    let opts = build_run_opts(config, &run_opts);
 
     // Build the full command.
     let mut cmd = config.opencode_command.clone();
@@ -47,17 +68,9 @@ pub fn run_opencode(config: &Config, extra_args: Vec<String>) -> Result<()> {
     Err(docker.exec_command(docker_args))
 }
 
-use std::path::Path;
-
 /// Build the full set of Docker run flags for an OpenCode session.
-pub fn build_run_opts(
-    config: &Config,
-    user: &ResolvedUser,
-    workspace: &ResolvedWorkspace,
-    opencode_config_dir: &Path,
-    port: u16,
-) -> Vec<String> {
-    let mut opts: Vec<String> = vec![
+pub fn build_run_opts(config: &Config, opts: &RunOpts) -> Vec<String> {
+    let mut run_args: Vec<String> = vec![
         "--rm".to_string(),
         "-it".to_string(),
         // Security hardening
@@ -79,14 +92,14 @@ pub fn build_run_opts(
 
     // Port publishing.
     if config.publish_port {
-        opts.push("-p".to_string());
-        opts.push(format!("{}:80", port));
+        run_args.push("-p".to_string());
+        run_args.push(format!("{}:80", opts.port));
     }
 
     // Environment: user identity and terminal capabilities.
-    opts.extend([
+    run_args.extend([
         "-e".to_string(),
-        format!("USER={}", user.username),
+        format!("USER={}", opts.user.username),
         "-e".to_string(),
         "TERM=xterm-256color".to_string(),
         "-e".to_string(),
@@ -96,31 +109,40 @@ pub fn build_run_opts(
     ]);
 
     // LLM API keys and OpenCode-specific env vars present on the host.
-    opts.extend(build_passthrough_env_args());
+    run_args.extend(build_passthrough_env_args());
 
     // Workspace bind mount.
-    opts.extend([
+    run_args.extend([
         "-v".to_string(),
         format!(
             "{}:{}:rw",
-            workspace.root.display(),
-            workspace.container_path.display()
+            opts.workspace.root.display(),
+            opts.workspace.container_path.display()
         ),
         "--workdir".to_string(),
-        workspace.container_path.to_string_lossy().into_owned(),
+        opts.workspace.container_path.to_string_lossy().into_owned(),
     ]);
 
     // OpenCode config directory bind mount.
-    opts.extend([
+    run_args.extend([
         "-v".to_string(),
         format!(
             "{}:/home/{}/.config/opencode:rw",
-            opencode_config_dir.display(),
-            user.username
+            opts.opencode_config_dir.display(),
+            opts.user.username
         ),
     ]);
 
-    opts
+    // Data volumes.
+    run_args.extend(build_data_volume_args(config, &opts.user));
+    run_args.extend(build_extra_volume_args(
+        config,
+        &opts.user,
+        &opts.workspace,
+        opts.host_home_dir.as_deref(),
+    ));
+
+    run_args
 }
 
 #[cfg(test)]
@@ -143,20 +165,31 @@ mod tests {
         let opencode_config_dir = PathBuf::from("/home/alice/.config/opencode");
         let port = 32768;
 
-        let opts = build_run_opts(&config, &user, &workspace, &opencode_config_dir, port);
+        let opts = RunOpts {
+            workspace,
+            user,
+            port,
+            opencode_config_dir,
+            host_home_dir: Some(PathBuf::from("/home/alice")),
+        };
+
+        let run_args = build_run_opts(&config, &opts);
 
         // Check for key flags
-        assert!(opts.contains(&"--rm".to_string()));
-        assert!(opts.contains(&"-it".to_string()));
-        assert!(opts.contains(&"no-new-privileges".to_string()));
-        assert!(opts.contains(&"USER=alice".to_string()));
-        assert!(opts.contains(&"/home/alice/project:/home/alice/project:rw".to_string()));
-        assert!(opts
+        assert!(run_args.contains(&"--rm".to_string()));
+        assert!(run_args.contains(&"-it".to_string()));
+        assert!(run_args.contains(&"no-new-privileges".to_string()));
+        assert!(run_args.contains(&"USER=alice".to_string()));
+        assert!(run_args.contains(&"/home/alice/project:/home/alice/project:rw".to_string()));
+        assert!(run_args
             .contains(&"/home/alice/.config/opencode:/home/alice/.config/opencode:rw".to_string()));
 
         // Port check
         if config.publish_port {
-            assert!(opts.contains(&"32768:80".to_string()));
+            assert!(run_args.contains(&"32768:80".to_string()));
         }
+
+        // Data volumes should be present by default
+        assert!(run_args.contains(&"ocx-cache:/home/alice/.cache:rw".to_string()));
     }
 }
