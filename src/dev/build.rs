@@ -2,15 +2,18 @@ use std::fs;
 use tempfile::TempDir;
 
 use crate::config::Config;
-use crate::nix::dev_image::{get_dockerfile, get_entrypoint, get_image_tag};
-use crate::nix::docker::{DockerClient, Result};
-use crate::nix::extra_dirs::resolve_extra_dirs;
-use crate::nix::BuildOptions;
+use crate::docker::args;
+use crate::docker::client::DockerClient;
+use crate::docker::BuildOptions;
 use crate::user::ResolvedUser;
+use anyhow::Result;
+
+use super::extra_dirs::resolve_extra_dirs;
+use super::image::{get_dockerfile, get_entrypoint, get_image_tag};
 
 /// Build the nix dev image locally.
-pub fn build_dev<D: DockerClient>(
-    docker: &D,
+pub fn build_dev(
+    docker: &DockerClient,
     config: &Config,
     user: &ResolvedUser,
     version: &str,
@@ -49,7 +52,29 @@ pub fn build_dev<D: DockerClient>(
         ("EXTRA_DIRS", &extra_dirs),
     ];
 
-    docker.build_image(&image_tag, context_path, &build_args, opts.no_cache)?;
+    let docker_build_args =
+        args::build_docker_build_args(&image_tag, context_path, &build_args, opts.no_cache);
+    docker.stream_command(docker_build_args)?;
+
+    Ok(())
+}
+
+/// Ensure the dev image exists locally, building it if necessary.
+pub fn ensure_dev_image(
+    docker: &DockerClient,
+    config: &Config,
+    user: &ResolvedUser,
+    version: &str,
+) -> Result<()> {
+    let image_tag = get_image_tag(version);
+
+    if !docker.image_exists(&image_tag)? {
+        println!(
+            "Image {} not found, building nix dev environment...",
+            image_tag
+        );
+        build_dev(docker, config, user, version, BuildOptions::default())?;
+    }
 
     Ok(())
 }

@@ -1,4 +1,4 @@
-use crate::workspace::ResolvedWorkspace;
+use super::workspace::ResolvedWorkspace;
 use std::path::PathBuf;
 
 /// A resolved shadow mount, ready to be translated into Docker CLI arguments.
