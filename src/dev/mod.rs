@@ -1,5 +1,6 @@
 pub mod build;
 pub mod container_name;
+pub mod env_file;
 pub mod env_passthrough;
 pub mod extra_dirs;
 pub mod image;

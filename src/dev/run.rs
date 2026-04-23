@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use crate::config::Config;
 use crate::dev;
 use crate::dev::container_name::resolve_container_name;
+use crate::dev::env_file::build_env_file_args;
 use crate::dev::env_passthrough::build_passthrough_env_args;
 use crate::dev::opencode_cmd::resolve_opencode_command;
 use crate::dev::shadow_mounts::{build_shadow_mount_args, resolve_shadow_mounts};
@@ -119,6 +120,12 @@ pub fn build_run_opts(
         run_args.push("-p".to_string());
         run_args.push(format!("{}:80", opts.port));
     }
+
+    // Env files.
+    run_args.extend(build_env_file_args(
+        &opts.workspace.root,
+        opts.host_home_dir.as_deref(),
+    ));
 
     // Environment: user identity and terminal capabilities.
     run_args.extend([
