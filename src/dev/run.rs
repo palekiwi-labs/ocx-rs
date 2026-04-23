@@ -167,14 +167,17 @@ pub fn build_run_opts(
     }
 
     // OpenCode config directory bind mount.
-    run_args.extend([
-        "-v".to_string(),
-        format!(
-            "{}:/home/{}/.config/opencode:rw",
-            opts.opencode_config_dir.display(),
-            opts.user.username
-        ),
-    ]);
+    // Skip if the workspace root is the same as the config dir (workspace mount covers it).
+    if opts.opencode_config_dir != opts.workspace.root {
+        run_args.extend([
+            "-v".to_string(),
+            format!(
+                "{}:/home/{}/.config/opencode:rw",
+                opts.opencode_config_dir.display(),
+                opts.user.username
+            ),
+        ]);
+    }
 
     // Timezone.
     run_args.extend([
@@ -468,6 +471,43 @@ mod tests {
             "{}:/opencode-config-dir:ro",
             config_dir_env.display()
         )));
+    }
+
+    #[test]
+    fn test_build_run_opts_workspace_conflict() {
+        let config = Config::default();
+        let user = ResolvedUser {
+            username: "alice".to_string(),
+            uid: 1000,
+            gid: 1000,
+        };
+        let workspace_root = PathBuf::from("/home/alice/.config/opencode");
+        let workspace = ResolvedWorkspace {
+            root: workspace_root.clone(),
+            container_path: PathBuf::from("/home/alice/.config/opencode"),
+        };
+        let opencode_config_dir = workspace_root;
+
+        let opts = RunOpts {
+            workspace,
+            user,
+            port: 32768,
+            opencode_config_dir,
+            host_home_dir: Some(PathBuf::from("/home/alice")),
+            user_flake_host_dir: None,
+        };
+
+        let run_args = build_run_opts(&config, &opts, None);
+
+        // Count how many times the config dir is mounted.
+        // It should appear exactly ONCE (via the workspace mount), not twice.
+        let mount_str = "/home/alice/.config/opencode:/home/alice/.config/opencode:rw";
+        let count = run_args.iter().filter(|a| a.as_str() == mount_str).count();
+
+        assert_eq!(
+            count, 1,
+            "Config dir should be mounted exactly once when it conflicts with workspace root"
+        );
     }
 
     #[test]
