@@ -1,5 +1,5 @@
 use anyhow::Result;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::config::Config;
 use crate::dev;
@@ -24,6 +24,14 @@ pub struct RunOpts {
     pub host_home_dir: Option<PathBuf>,
     pub user_flake_host_dir: Option<PathBuf>,
     pub opencode_config_dir_env: Option<PathBuf>,
+}
+
+/// Resolves the OPENCODE_CONFIG_DIR environment variable to an absolute host path,
+/// expanding leading tildes if necessary, and filtering on path existence.
+pub fn resolve_config_dir_env(env_val: Option<String>, home_dir: Option<&Path>) -> Option<PathBuf> {
+    env_val
+        .map(|p| dev::utils::expand_tilde(&p, home_dir))
+        .filter(|p| p.exists())
 }
 
 /// Orchestrate and run an OpenCode session.
@@ -56,10 +64,10 @@ pub fn run_opencode(config: &Config, extra_args: Vec<String>) -> Result<()> {
         .filter(|h| h.join(".config/ocx/nix/flake.nix").exists())
         .map(|h| h.join(".config/ocx/nix"));
 
-    let opencode_config_dir_env = std::env::var("OPENCODE_CONFIG_DIR")
-        .ok()
-        .map(|p| dev::utils::expand_tilde(&p, host_home_dir.as_deref()))
-        .filter(|p| p.exists());
+    let opencode_config_dir_env = resolve_config_dir_env(
+        std::env::var("OPENCODE_CONFIG_DIR").ok(),
+        host_home_dir.as_deref(),
+    );
 
     let run_opts = RunOpts {
         workspace,
@@ -450,5 +458,42 @@ mod tests {
 
         assert!(run_args
             .contains(&"/home/alice/.config/opencode-custom:/opencode-config-dir:ro".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_config_dir_env_with_tilde() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let home = temp.path();
+
+        // Create the target dir so .exists() passes
+        let target_dir = home.join(".config/my-opencode");
+        std::fs::create_dir_all(&target_dir).unwrap();
+
+        let env_val = Some("~/.config/my-opencode".to_string());
+        let result = resolve_config_dir_env(env_val, Some(home));
+
+        assert_eq!(result, Some(target_dir));
+    }
+
+    #[test]
+    fn test_resolve_config_dir_env_absolute() {
+        let temp = tempfile::TempDir::new().unwrap();
+
+        // Create the target dir so .exists() passes
+        let target_dir = temp.path().join("absolute/path");
+        std::fs::create_dir_all(&target_dir).unwrap();
+
+        let env_val = Some(target_dir.to_string_lossy().to_string());
+        let result = resolve_config_dir_env(env_val, None);
+
+        assert_eq!(result, Some(target_dir));
+    }
+
+    #[test]
+    fn test_resolve_config_dir_env_missing() {
+        let env_val = Some("/does/not/exist/anywhere/12345".to_string());
+        let result = resolve_config_dir_env(env_val, None);
+
+        assert_eq!(result, None);
     }
 }
