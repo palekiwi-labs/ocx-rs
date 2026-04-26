@@ -7,6 +7,7 @@ use clap::{Parser, Subcommand};
 #[derive(Parser)]
 #[command(name = "ocx")]
 #[command(about, long_about = None)]
+#[command(subcommand_required = true, arg_required_else_help = true)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -14,16 +15,25 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Build the Nix dev image (and optionally the daemon base image)
+    Build {
+        #[arg(long)]
+        base: bool,
+        #[arg(short, long)]
+        force: bool,
+        #[arg(long)]
+        no_cache: bool,
+    },
     /// Manage OCX configuration
     Config {
         #[command(subcommand)]
         command: Option<config::ConfigCommands>,
     },
     /// Manage Nix daemon
-    #[command(name = "nix-daemon")]
+    #[command(name = "nix-daemon", arg_required_else_help = true)]
     NixDaemon {
         #[command(subcommand)]
-        command: Option<nix_daemon::NixDaemonCommands>,
+        command: nix_daemon::NixDaemonCommands,
     },
     /// Start an interactive OpenCode session
     #[command(alias = "o", disable_help_flag = true)]
@@ -38,15 +48,6 @@ pub enum Commands {
     },
     /// Print the port that the container will publish
     Port,
-    /// Build the Nix dev image (and optionally the daemon base image)
-    Build {
-        #[arg(long)]
-        base: bool,
-        #[arg(short, long)]
-        force: bool,
-        #[arg(long)]
-        no_cache: bool,
-    },
 }
 
 pub fn run(cli: Cli) -> Result<()> {
@@ -54,19 +55,15 @@ pub fn run(cli: Cli) -> Result<()> {
     let cfg = load_config()?;
 
     match cli.command {
-        Some(Commands::Config { command }) => config::handle_config(&cfg, command),
-        Some(Commands::NixDaemon { command }) => nix_daemon::handle_nix_daemon(&cfg, command),
-        Some(Commands::Opencode { extra_args }) => opencode::handle_opencode(&cfg, extra_args),
-        Some(Commands::Port) => port::handle_port(&cfg),
         Some(Commands::Build {
             base,
             force,
             no_cache,
         }) => build::handle_build(&cfg, base, force, no_cache),
-        None => {
-            // No subcommand provided, print help
-            Cli::parse_from(["ocx", "--help"]);
-            Ok(())
-        }
+        Some(Commands::Config { command }) => config::handle_config(&cfg, command),
+        Some(Commands::NixDaemon { command }) => nix_daemon::handle_nix_daemon(&cfg, command),
+        Some(Commands::Opencode { extra_args }) => opencode::handle_opencode(&cfg, extra_args),
+        Some(Commands::Port) => port::handle_port(&cfg),
+        None => unreachable!("Clap should handle required subcommands"),
     }
 }

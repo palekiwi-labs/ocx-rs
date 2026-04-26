@@ -26,10 +26,7 @@ mod tests {
     fn test_get_image_tag_format() {
         assert_eq!(
             get_image_tag(),
-            format!(
-                "localhost/ocx-nix-daemon:{}",
-                env!("CARGO_PKG_VERSION")
-            )
+            format!("localhost/ocx-nix-daemon:{}", env!("CARGO_PKG_VERSION"))
         );
     }
 
