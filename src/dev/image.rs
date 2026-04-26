@@ -1,4 +1,4 @@
-const DOCKERFILE: &str = include_str!("../../assets/nix/Dockerfile.nix-dev");
+const DOCKERFILE: &str = include_str!("../../assets/Dockerfile.dev");
 const IMAGE_BASE: &str = "localhost/ocx";
 const OCX_VERSION: &str = env!("CARGO_PKG_VERSION");
 

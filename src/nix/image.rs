@@ -1,5 +1,5 @@
 /// Embedded Dockerfile content for the nix daemon image
-const DOCKERFILE: &str = include_str!("../../assets/nix/Dockerfile.nix-daemon");
+const DOCKERFILE: &str = include_str!("../../assets/Dockerfile.nix-daemon");
 
 /// Base name for the nix daemon image
 const IMAGE_BASE: &str = "localhost/ocx-nix-daemon";
