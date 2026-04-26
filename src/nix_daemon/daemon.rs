@@ -99,3 +99,26 @@ pub fn stop(docker: &DockerClient, config: &Config) -> Result<()> {
 
     Ok(())
 }
+
+/// Drop into an interactive shell in the nix daemon container
+pub fn shell(docker: &DockerClient, config: &Config) -> Result<()> {
+    let container_name = &config.nix_daemon_container_name;
+
+    // Check if it's actually running
+    if !docker.is_container_running(container_name)? {
+        println!(
+            "Nix daemon is not running: {}. Run 'ocx nix-daemon start' first.",
+            container_name
+        );
+        return Ok(());
+    }
+
+    let exec_args = vec![
+        "exec".to_string(),
+        "-it".to_string(),
+        container_name.clone(),
+        "/bin/sh".to_string(),
+    ];
+
+    Err(docker.exec_command(exec_args))
+}
