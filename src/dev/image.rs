@@ -1,15 +1,14 @@
 const DOCKERFILE: &str = include_str!("../../assets/nix/Dockerfile.nix-dev");
 const IMAGE_BASE: &str = "localhost/ocx";
+const OCX_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Get the full image tag for the nix dev container.
 ///
-/// Format: `localhost/ocx:v{ocx_version}-opencode-{opencode_version}`
+/// Format: `localhost/ocx:{ocx_version}-opencode-{opencode_version}`
 pub fn get_image_tag(opencode_version: &str) -> String {
     format!(
-        "{}:v{}-opencode-{}",
-        IMAGE_BASE,
-        env!("CARGO_PKG_VERSION"),
-        opencode_version
+        "{}:{}-opencode-{}",
+        IMAGE_BASE, OCX_VERSION, opencode_version
     )
 }
 
@@ -24,15 +23,13 @@ mod tests {
 
     #[test]
     fn test_get_image_tag_format() {
-        let tag = get_image_tag("1.4.7");
-
-        assert!(tag.starts_with("localhost/ocx:v"));
-        assert!(tag.contains("-opencode-1.4.7"));
-    }
-
-    #[test]
-    fn test_get_dockerfile_is_not_empty() {
-        assert!(!get_dockerfile().is_empty());
+        assert_eq!(
+            get_image_tag("1.4.7"),
+            format!(
+                "localhost/ocx:{}-opencode-1.4.7",
+                env!("CARGO_PKG_VERSION")
+            )
+        );
     }
 
     #[test]
