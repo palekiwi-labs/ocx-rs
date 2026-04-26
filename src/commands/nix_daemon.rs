@@ -10,7 +10,7 @@ use crate::nix_daemon;
 pub enum NixDaemonCommands {
     /// Build the nix daemon image
     #[command(name = "build")]
-    BuildDaemon {
+    Build {
         /// Force rebuild even if image exists
         #[arg(long)]
         force: bool,
@@ -29,7 +29,7 @@ pub enum NixDaemonCommands {
 
 pub fn handle_nix_daemon(cfg: &Config, command: NixDaemonCommands) -> Result<()> {
     match command {
-        NixDaemonCommands::BuildDaemon { force, no_cache } => {
+        NixDaemonCommands::Build { force, no_cache } => {
             let docker = DockerClient;
             let opts = BuildOptions { force, no_cache };
             nix_daemon::build(&docker, opts)?;
