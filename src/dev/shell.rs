@@ -14,11 +14,7 @@ pub fn shell(config: &Config) -> Result<()> {
     let workspace = get_workspace(&user.username)?;
     let port = resolve_port(config)?;
 
-    let cwd_basename = workspace
-        .root
-        .file_name()
-        .and_then(|n| n.to_str())
-        .expect("Workspace root should have a valid directory name");
+    let cwd_basename = workspace.root_basename();
 
     let container_name = resolve_container_name(config, cwd_basename, port);
 
