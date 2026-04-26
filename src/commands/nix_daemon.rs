@@ -27,38 +27,27 @@ pub enum NixDaemonCommands {
     Stop,
 }
 
-pub fn handle_nix_daemon(cfg: &Config, command: Option<NixDaemonCommands>) -> Result<()> {
+pub fn handle_nix_daemon(cfg: &Config, command: NixDaemonCommands) -> Result<()> {
     match command {
-        Some(NixDaemonCommands::BuildDaemon { force, no_cache }) => {
+        NixDaemonCommands::BuildDaemon { force, no_cache } => {
             let docker = DockerClient;
             let opts = BuildOptions { force, no_cache };
             nix_daemon::build(&docker, opts)?;
             Ok(())
         }
-        Some(NixDaemonCommands::Shell) => {
+        NixDaemonCommands::Shell => {
             let docker = DockerClient;
             nix_daemon::shell(&docker, cfg)?;
             Ok(())
         }
-        Some(NixDaemonCommands::Start) => {
+        NixDaemonCommands::Start => {
             let docker = DockerClient;
             nix_daemon::ensure_running(&docker, cfg)?;
             Ok(())
         }
-        Some(NixDaemonCommands::Stop) => {
+        NixDaemonCommands::Stop => {
             let docker = DockerClient;
             nix_daemon::stop(&docker, cfg)?;
-            Ok(())
-        }
-        None => {
-            // No subcommand provided, print help for nix-daemon
-            println!("Usage: ocx nix-daemon <COMMAND>");
-            println!();
-            println!("Commands:");
-            println!("  build    Build the nix daemon image");
-            println!("  shell    Drop into an interactive shell in the nix daemon container");
-            println!("  start    Start the nix daemon container");
-            println!("  stop     Stop the nix daemon container");
             Ok(())
         }
     }

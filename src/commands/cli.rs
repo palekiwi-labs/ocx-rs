@@ -7,6 +7,7 @@ use clap::{Parser, Subcommand};
 #[derive(Parser)]
 #[command(name = "ocx")]
 #[command(about, long_about = None)]
+#[command(subcommand_required = true, arg_required_else_help = true)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -29,10 +30,10 @@ pub enum Commands {
         command: Option<config::ConfigCommands>,
     },
     /// Manage Nix daemon
-    #[command(name = "nix-daemon")]
+    #[command(name = "nix-daemon", arg_required_else_help = true)]
     NixDaemon {
         #[command(subcommand)]
-        command: Option<nix_daemon::NixDaemonCommands>,
+        command: nix_daemon::NixDaemonCommands,
     },
     /// Start an interactive OpenCode session
     #[command(alias = "o", disable_help_flag = true)]
@@ -63,10 +64,6 @@ pub fn run(cli: Cli) -> Result<()> {
         Some(Commands::NixDaemon { command }) => nix_daemon::handle_nix_daemon(&cfg, command),
         Some(Commands::Opencode { extra_args }) => opencode::handle_opencode(&cfg, extra_args),
         Some(Commands::Port) => port::handle_port(&cfg),
-        None => {
-            // No subcommand provided, print help
-            Cli::parse_from(["ocx", "--help"]);
-            Ok(())
-        }
+        None => unreachable!("Clap should handle required subcommands"),
     }
 }
